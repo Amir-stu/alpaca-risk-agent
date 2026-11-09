@@ -19,7 +19,7 @@ from typing import Any, Protocol
 from dotenv import load_dotenv, set_key
 
 from risk_agent.agent import Broker, client_order_id, run
-from risk_agent.alpaca_cli import AlpacaCLI, resolve_binary
+from risk_agent.alpaca_cli import TERMINAL_ORDER_STATUSES, AlpacaCLI, resolve_binary
 from risk_agent.config import (
     PROJECT_ROOT,
     RiskLimits,
@@ -32,7 +32,6 @@ from risk_agent.decision_log import DecisionLog
 from risk_agent.protection import covering_stops
 
 logger = logging.getLogger(__name__)
-TERMINAL_ORDER_STATUSES = frozenset({"filled", "canceled", "expired", "rejected"})
 
 
 class VerificationBroker(Broker, Protocol):

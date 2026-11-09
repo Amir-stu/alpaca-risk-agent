@@ -87,7 +87,7 @@ def test_positions_when_success_returns_list():
     assert runner.calls[0] == ["alpaca", "position", "list"]
 
 
-def test_open_orders_when_called_filters_by_symbol():
+def test_open_orders_when_called_lists_nested_orders_for_symbol():
     cli, runner = make_cli(ok([]))
     assert cli.open_orders("MSFT") == []
     assert runner.calls[0] == [
@@ -95,12 +95,39 @@ def test_open_orders_when_called_filters_by_symbol():
         "order",
         "list",
         "--status",
-        "open",
+        "all",
+        "--nested",
         "--symbols",
         "MSFT",
         "--limit",
         "500",
     ]
+
+
+def test_open_orders_when_filled_bracket_has_held_stop_returns_working_legs():
+    # Shape observed on paper 2026-11-09: the filled entry's held stop leg is missing
+    # from `--status open`, but present under `legs` in a nested listing.
+    filled_bracket = {
+        "id": "entry-1",
+        "group_role": "entry",
+        "status": "filled",
+        "legs": [
+            {"id": "tp-1", "group_role": "take_profit", "status": "new"},
+            {"id": "sl-1", "group_role": "stop_loss", "status": "held"},
+        ],
+    }
+    old_bracket = {
+        "id": "entry-0",
+        "group_role": "entry",
+        "status": "filled",
+        "legs": [
+            {"id": "tp-0", "group_role": "take_profit", "status": "filled"},
+            {"id": "sl-0", "group_role": "stop_loss", "status": "canceled"},
+        ],
+    }
+    working_entry = {"id": "entry-2", "group_role": "entry", "status": "new", "legs": None}
+    cli, _ = make_cli(ok([working_entry, filled_bracket, old_bracket]))
+    assert [o["id"] for o in cli.open_orders("MSFT")] == ["entry-2", "tp-1", "sl-1"]
 
 
 def test_orders_since_when_called_queries_all_statuses_after_date():

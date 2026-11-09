@@ -25,8 +25,15 @@ Also: the agent refuses to start if `ALPACA_LIVE_TRADE=true` (the CLI's switch t
 dry-run unless `DRY_RUN` is literally `false`, validates watchlist symbols before they reach a subprocess, and
 uses Windows Task Scheduler instead of cron.
 
-**Not verified yet.** Whether Alpaca's bracket legs inherit `day` (fix 4) is not stated in Alpaca's docs. The
-fix doesn't depend on the answer, and the stop-leg check will show the real behaviour on the first live run.
+**Found on the first paper fill (2026-11-09).** The bracket legs were created as `gtc`. After the entry
+filled, the stop-loss leg stayed in status `held` with the right price and quantity, yet
+`order list --status open` never returned it in about two minutes of polling. The flat listing carries every
+field the check needs, so the likely cause is that the `open` filter leaves out `held` legs. An agent trusting
+that listing would raise a false "no stop" alert on every protected position. Open orders now come from
+the nested listing (`--status all --nested`): legs are flattened and filtered on status in code
+(`test_open_orders_when_filled_bracket_has_held_stop_returns_working_legs`). The failing run closed its
+28-share MSFT test position (bought $544.05, sold $542.36, about -$47 paper) and left the account flat.
+This fix has not yet been confirmed against a live fill.
 
 ## How a run works
 

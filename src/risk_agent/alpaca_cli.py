@@ -22,6 +22,7 @@ POSITION_NOT_FOUND_CODE = 40410000
 HTTP_NOT_FOUND = 404
 DEFAULT_TIMEOUT_SECONDS = 60
 ORDER_LIST_LIMIT = "500"
+TERMINAL_ORDER_STATUSES = frozenset({"filled", "canceled", "expired", "rejected", "replaced"})
 BAR_ADJUSTMENT = "split"  # split-adjusted closes so a stock split doesn't fake a crossover
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -153,11 +154,28 @@ class AlpacaCLI:
         return payload
 
     def open_orders(self, symbol: str) -> list[dict[str, Any]]:
+        """Working orders, bracket legs included, filtered on status here rather than by the API.
+
+        Observed on paper: once a bracket entry fills, its `held` stop-loss leg is absent from
+        `--status open`, so a protected position looked unprotected. The nested listing carries
+        every leg with its own status.
+        """
         payload: list[dict[str, Any]] = (
-            self._run("order", "list", "--status", "open", "--symbols", symbol, "--limit", ORDER_LIST_LIMIT)
+            self._run(
+                "order",
+                "list",
+                "--status",
+                "all",
+                "--nested",
+                "--symbols",
+                symbol,
+                "--limit",
+                ORDER_LIST_LIMIT,
+            )
             or []
         )
-        return payload
+        flattened = [o for parent in payload for o in (parent, *(parent.get("legs") or []))]
+        return [o for o in flattened if o.get("status") not in TERMINAL_ORDER_STATUSES]
 
     def orders_since(self, symbol: str, day: str) -> list[dict[str, Any]]:
         payload: list[dict[str, Any]] = (
