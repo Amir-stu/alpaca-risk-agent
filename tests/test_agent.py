@@ -206,6 +206,11 @@ def test_run_when_position_open_with_live_stop_skips(tmp_path):
             "group_role": "stop_loss",
             "side": "sell",
             "status": "held",
+            "symbol": "AAPL",
+            "qty": "50",
+            "type": "stop",
+            "stop_price": "302.69",
+            "time_in_force": "gtc",
             "submitted_at": "2026-11-06T15:00:00Z",
         }
     ]
@@ -298,7 +303,10 @@ def test_working_entry_does_not_hide_unprotected_position(tmp_path):
 def test_daily_loss_halt_with_protected_position_remains_quiet(tmp_path):
     broker = FakeBroker(
         positions_by_symbol={"AAPL": {"symbol": "AAPL", "qty": "5"}},
-        open_by_symbol={"AAPL": [{"id": "s1", "group_role": "stop_loss"}]},
+        open_by_symbol={"AAPL": [{
+            "id": "s1", "group_role": "stop_loss", "symbol": "AAPL", "qty": "5", "side": "sell",
+            "type": "stop", "stop_price": "302.69", "status": "new", "time_in_force": "gtc",
+        }]},
     )
     broker.account_payload = {**broker.account_payload, "equity": "96000"}
     result, records = execute(broker, tmp_path, "AAPL")

@@ -127,6 +127,18 @@ def test_cancel_order_when_called_passes_id_and_tolerates_empty_stdout():
     assert runner.calls[0] == ["alpaca", "order", "cancel", "--order-id", "abc-123"]
 
 
+def test_get_order_queries_exact_order_id():
+    cli, runner = make_cli(ok({"id": "abc-123", "status": "filled"}))
+    assert cli.get_order("abc-123")["status"] == "filled"
+    assert runner.calls[0] == ["alpaca", "order", "get", "--order-id", "abc-123"]
+
+
+def test_close_position_targets_only_the_requested_symbol():
+    cli, runner = make_cli(ok({"id": "close-1"}))
+    cli.close_position("AAPL")
+    assert runner.calls[0] == ["alpaca", "position", "close", "--symbol-or-asset-id", "AAPL"]
+
+
 def test_daily_bars_when_called_uses_feed_and_returns_bars():
     cli, runner = make_cli(ok({"bars": [{"t": "2026-11-06T05:00:00Z", "c": 1.0}]}))
     assert cli.daily_bars("AAPL", start="2026-09-25") == [{"t": "2026-11-06T05:00:00Z", "c": 1.0}]

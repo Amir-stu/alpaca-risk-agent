@@ -29,6 +29,7 @@ from risk_agent.config import (
     load_settings,
 )
 from risk_agent.decision_log import DecisionLog
+from risk_agent.protection import covering_stops
 from risk_agent.risk_rules import (
     breaches_daily_loss_limit,
     daily_pnl_pct,
@@ -109,8 +110,9 @@ def check_position_protection(
     ctx: RunContext, symbol: str, open_orders: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
     """Audit held exposure even when entries are halted or an entry is partially filled."""
-    if ctx.broker.position(symbol) is not None:
-        stops = [o for o in open_orders if o.get("group_role") == "stop_loss"]
+    position = ctx.broker.position(symbol)
+    if position is not None:
+        stops = covering_stops(position, open_orders)
         if not stops:
             return {
                 "action": "alert",

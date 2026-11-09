@@ -91,6 +91,22 @@ Dashboard (optional): `.venv\Scripts\python -m risk_agent.ui`. **Known issue:** 
 processes images, so that code isn't reachable here, but it is a real gap in `pip-audit`. The agent and the
 MCP server don't depend on gradio.
 
+## Paper execution verification
+
+<!-- paper-verification:start -->
+**Pending.** No paper fill or live protective-stop observation has been verified yet.
+<!-- paper-verification:end -->
+
+Run `.venv\Scripts\python -m risk_agent.paper_verification --execute-paper` during market hours.
+It requires an initially flat paper account, runs a dry run, submits at most one signal-approved
+bracket with `DRY_RUN=false`, waits for a full fill, checks a covering GTC stop in the broker's open-order
+response, and runs the same agent again. It only passes when that next run reports
+`position already open (stop-loss leg ... live)`. A missing signal is pending, not success.
+On failure it cancels an unfilled test entry and attempts to close an unprotected test position;
+any cleanup failure is recorded as `ALERT`. It never touches preexisting positions.
+After a pass it updates this status block and sets `.env` to `DRY_RUN=false`.
+The raw report and logs remain local in `data/paper-verification.json` and `logs/paper-verification.log`.
+
 ## Limitations
 
 - The signal is a toy. A 5/15 SMA crossover has no demonstrated edge, and this repo makes no claim that it does.
@@ -105,8 +121,7 @@ MCP server don't depend on gradio.
 - Daily-loss entry halts still audit watchlist positions for missing stops and fail if the audit fails.
   Monitoring currently runs during the regular market session and covers watchlist symbols only.
 - A working entry does not suppress a missing-stop alert for an existing position in that symbol.
-- Real paper fills and protective exit behavior still need market-hours verification. Offline coverage:
-  130 tests at approximately 95%, including one test that runs the
+- Paper fill/protective-stop verification status is recorded above. Offline tests include one that runs the
   real `alpaca` binary in `--dry-run` mode to confirm the flags it builds.
 
 ## Development

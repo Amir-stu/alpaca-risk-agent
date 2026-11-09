@@ -180,6 +180,13 @@ class AlpacaCLI:
     def cancel_order(self, order_id: str) -> None:
         self._run("order", "cancel", "--order-id", order_id)
 
+    def get_order(self, order_id: str) -> dict[str, Any]:
+        payload: dict[str, Any] = self._run("order", "get", "--order-id", order_id)
+        return payload
+
+    def close_position(self, symbol: str) -> None:
+        self._run("position", "close", "--symbol-or-asset-id", symbol)
+
     def daily_bars(self, symbol: str, start: str) -> list[dict[str, Any]]:
         payload = self._run(
             "data",
