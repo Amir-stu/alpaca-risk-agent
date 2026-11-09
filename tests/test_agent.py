@@ -193,7 +193,7 @@ def test_run_when_entry_order_stale_from_prior_day_cancels_it_and_reevaluates(tm
         }
     ]
     broker = FakeBroker(bars={"AAPL": rising_bars()}, prices={"AAPL": 312.05}, open_by_symbol={"AAPL": stale})
-    _, records = execute(broker, tmp_path, "AAPL")
+    _, records = execute(broker, tmp_path, "AAPL", dry_run=False)
     assert broker.canceled == ["old1"]
     assert records[0]["canceled_stale_entries"] == ["old1"]
     assert records[0]["action"] == "buy"
@@ -247,7 +247,65 @@ def test_run_when_daily_loss_breached_halts_every_symbol(tmp_path):
     broker.account_payload = {**broker.account_payload, "equity": "96000"}
     _, records = execute(broker, tmp_path, "AAPL", "SPY")
     assert [r["reason"] for r in records] == ["daily loss limit breached (-4.00% vs -3% cap)"] * 2
-    assert broker.calls == []
+    assert not any(call.startswith(("daily_bars:", "latest_trade_price:")) for call in broker.calls)
+    assert broker.submitted == []
+    assert broker.canceled == []
+
+
+def test_dry_run_never_cancels_stale_entry(tmp_path):
+    stale = [{"id": "old1", "group_role": "entry", "submitted_at": "2026-11-06T15:00:00Z"}]
+    broker = FakeBroker(open_by_symbol={"AAPL": stale})
+    result, records = execute(broker, tmp_path, "AAPL")
+    assert result.exit_code == 0
+    assert broker.canceled == []
+    assert broker.submitted == []
+    assert records[0]["action"] == "skip"
+    assert "still working" in records[0]["reason"]
+
+
+def test_daily_loss_halt_still_alerts_on_unprotected_position(tmp_path):
+    broker = FakeBroker(positions_by_symbol={"AAPL": {"symbol": "AAPL", "qty": "50"}})
+    broker.account_payload = {**broker.account_payload, "equity": "96000"}
+    result, records = execute(broker, tmp_path, "AAPL", "SPY", dry_run=False)
+    assert result.exit_code == 1
+    assert records[0]["action"] == "alert"
+    assert "no live stop-loss" in records[0]["reason"]
+    assert records[1]["reason"].startswith("daily loss limit breached")
+    assert broker.submitted == []
+    assert broker.canceled == []
+
+
+def test_daily_loss_halt_logs_failed_stop_audit_as_error(tmp_path):
+    broker = FakeBroker(fail_on={"AAPL": "position"})
+    broker.account_payload = {**broker.account_payload, "equity": "96000"}
+    result, records = execute(broker, tmp_path, "AAPL")
+    assert result.exit_code == 1
+    assert records[0]["action"] == "error"
+    assert broker.submitted == []
+
+
+def test_working_entry_does_not_hide_unprotected_position(tmp_path):
+    broker = FakeBroker(
+        positions_by_symbol={"AAPL": {"symbol": "AAPL", "qty": "5"}},
+        open_by_symbol={"AAPL": [{"id": "e1", "group_role": "entry", "submitted_at": TODAY}]},
+    )
+    result, records = execute(broker, tmp_path, "AAPL")
+    assert result.exit_code == 1
+    assert records[0]["action"] == "alert"
+    assert broker.submitted == []
+
+
+def test_daily_loss_halt_with_protected_position_remains_quiet(tmp_path):
+    broker = FakeBroker(
+        positions_by_symbol={"AAPL": {"symbol": "AAPL", "qty": "5"}},
+        open_by_symbol={"AAPL": [{"id": "s1", "group_role": "stop_loss"}]},
+    )
+    broker.account_payload = {**broker.account_payload, "equity": "96000"}
+    result, records = execute(broker, tmp_path, "AAPL")
+    assert result.exit_code == 0
+    assert records[0]["action"] == "skip"
+    assert records[0]["reason"].startswith("daily loss limit breached")
+    assert broker.submitted == []
 
 
 @pytest.mark.parametrize(

@@ -101,7 +101,12 @@ MCP server don't depend on gradio.
 - `iex` is the default data feed because free accounts can't query recent SIP data. IEX volume is thin, so
   latest-trade prices can lag the consolidated tape.
 - One entry per symbol per day, by design. A stop-out is not re-entered the same session.
-- Not yet run against a live paper account. Offline coverage: 125 tests at 94%, plus one test that runs the
+- Dry-run never cancels stale entries; they remain visible as working orders and block new entries.
+- Daily-loss entry halts still audit watchlist positions for missing stops and fail if the audit fails.
+  Monitoring currently runs during the regular market session and covers watchlist symbols only.
+- A working entry does not suppress a missing-stop alert for an existing position in that symbol.
+- Real paper fills and protective exit behavior still need market-hours verification. Offline coverage:
+  130 tests at approximately 95%, including one test that runs the
   real `alpaca` binary in `--dry-run` mode to confirm the flags it builds.
 
 ## Development

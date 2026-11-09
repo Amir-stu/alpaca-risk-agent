@@ -74,6 +74,7 @@ class RunContext:
     params: StrategyParams
     today: str
     equity: float
+    entry_halt_reason: str | None = None
 
 
 def client_order_id(symbol: str, today: str) -> str:
@@ -92,6 +93,8 @@ def account_problem(account: dict[str, Any]) -> str | None:
 
 def cancel_stale_entries(ctx: RunContext, open_orders: list[dict[str, Any]]) -> list[str]:
     """A GTC entry left unfilled from an earlier session would fill later at stale sizing."""
+    if ctx.settings.dry_run:
+        return []
     stale = [
         o["id"]
         for o in open_orders
@@ -102,12 +105,10 @@ def cancel_stale_entries(ctx: RunContext, open_orders: list[dict[str, Any]]) -> 
     return stale
 
 
-def check_existing_exposure(
+def check_position_protection(
     ctx: RunContext, symbol: str, open_orders: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
-    working = [o for o in open_orders if o.get("group_role") == "entry"]
-    if working:
-        return {"action": "skip", "reason": f"entry order {working[0]['id']} still working"}
+    """Audit held exposure even when entries are halted or an entry is partially filled."""
     if ctx.broker.position(symbol) is not None:
         stops = [o for o in open_orders if o.get("group_role") == "stop_loss"]
         if not stops:
@@ -116,6 +117,18 @@ def check_existing_exposure(
                 "reason": "position open with no live stop-loss leg — protect it manually",
             }
         return {"action": "skip", "reason": f"position already open (stop-loss leg {stops[0]['id']} live)"}
+    return None
+
+
+def check_existing_exposure(
+    ctx: RunContext, symbol: str, open_orders: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    protection = check_position_protection(ctx, symbol, open_orders)
+    if protection is not None:
+        return protection
+    working = [o for o in open_orders if o.get("group_role") == "entry"]
+    if working:
+        return {"action": "skip", "reason": f"entry order {working[0]['id']} still working"}
     order_id = client_order_id(symbol, ctx.today)
     if any(o.get("client_order_id") == order_id for o in ctx.broker.orders_since(symbol, ctx.today)):
         return {"action": "skip", "reason": f"already entered {symbol} today (one entry per symbol per day)"}
@@ -155,6 +168,11 @@ def price_trade(ctx: RunContext, symbol: str, reference: float) -> tuple[Bracket
 def evaluate_symbol(ctx: RunContext, symbol: str, decision: dict[str, Any]) -> dict[str, Any]:
     """Mutates nothing: each step returns a new decision dict with what it learned."""
     open_orders = ctx.broker.open_orders(symbol)
+    if ctx.entry_halt_reason is not None:
+        protection = check_position_protection(ctx, symbol, open_orders)
+        if protection is not None and protection["action"] == "alert":
+            return {**decision, **protection, "entry_halt_reason": ctx.entry_halt_reason}
+        return {**decision, "action": "skip", "reason": ctx.entry_halt_reason}
     canceled = cancel_stale_entries(ctx, open_orders)
     if canceled:
         decision = {**decision, "canceled_stale_entries": canceled}
@@ -220,7 +238,8 @@ def run(
     elif breaches_daily_loss_limit(equity, last_equity, limits):
         pnl = daily_pnl_pct(equity, last_equity)
         reason = f"daily loss limit breached ({pnl:.2%} vs -{limits.max_daily_loss_pct:.0%} cap)"
-        decisions, status = halt_all(settings, base, "skip", reason), "ok"
+        ctx = RunContext(broker, settings, limits, params, today, equity, entry_halt_reason=reason)
+        decisions, status = [_safe_evaluate(ctx, s, base) for s in settings.watchlist], "ok"
     else:
         ctx = RunContext(broker, settings, limits, params, today, equity)
         decisions, status = [_safe_evaluate(ctx, s, base) for s in settings.watchlist], "ok"
